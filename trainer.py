@@ -109,7 +109,7 @@ class Trainer(object):
         # l1 = nn.L1Loss()
         # note that the above options rely on the backend torch.nn implementation of the L1 loss. That implementation does not allow gradients to flow through the second argument (the target) of the loss function. However this redefinition does. See also: https://discuss.pytorch.org/t/nn-criterions-dont-compute-the-gradient-w-r-t-targets/3693
         def l1(input, target):
-            return torch.sum((input - target)) / input.data.nelement()
+            return torch.mean(torch.sum(torch.abs(input - target), 1))
 
         z_D = Variable(torch.FloatTensor(self.batch_size, self.z_num))
         z_G = Variable(torch.FloatTensor(self.batch_size, self.z_num))
@@ -147,33 +147,40 @@ class Trainer(object):
                 data_loader = iter(self.data_loader)
                 x = next(data_loader)
 
+            # ground truth (real) data
             x = self._get_variable(x)
             batch_size = x.size(0)
 
             self.D.zero_grad()
             self.G.zero_grad()
 
+            # Update Discriminator D
+
             z_D.data.normal_(0, 1)
-            z_G.data.normal_(0, 1)
-
-            #sample_z_D = self.G(z_D)
-            sample_z_G = self.G(z_G)
-
+            sample_z_D = self.G(z_D)
             AE_x = self.D(x)
-            AE_G_d = self.D(sample_z_G.detach())
-            AE_G_g = self.D(sample_z_G)
+            AE_G_d = self.D(sample_z_D.detach())
 
             d_loss_real = l1(AE_x, x)
-            d_loss_fake = l1(AE_G_d, sample_z_G.detach())
+            d_loss_fake = l1(AE_G_d, sample_z_D.detach())
 
             d_loss = d_loss_real - k_t * d_loss_fake
-            g_loss = l1(sample_z_G, AE_G_g) # this won't still solve the problem
-
-            loss = d_loss + g_loss
-            loss.backward()
-
-            g_optim.step()
+            d_loss.backward()
             d_optim.step()
+
+            # Update Generator G
+
+            z_G.data.normal_(0, 1)
+            sample_z_G = self.G(z_G)
+            AE_G_g = self.D(sample_z_G)
+            g_loss = l1(AE_G_g, sample_z_G) 
+
+            # loss = d_loss + g_loss
+            g_loss.backward()
+            g_optim.step()
+
+            self.D.zero_grad()
+            self.G.zero_grad()
 
             g_d_balance = (self.gamma * d_loss_real - d_loss_fake).data[0]
             k_t += self.lambda_k * g_d_balance
