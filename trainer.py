@@ -61,9 +61,12 @@ class Trainer(object):
 
         self.build_model()
 
-        if self.num_gpu > 0:
+        if self.num_gpu == 1:
             self.G.cuda()
             self.D.cuda()
+        elif self.num_gpu > 1:
+            self.D = nn.DataParallel(self.D.cuda(),device_ids=range(self.num_gpu))
+            self.G = nn.DataParallel(self.G.cuda(),device_ids=range(self.num_gpu))
 
         if self.load_path:
             self.load_model()
@@ -102,19 +105,22 @@ class Trainer(object):
         self.D.apply(weights_init)
 
     def train(self):
-        l1 = L1Loss()
+        # l1 = L1Loss()
+        # l1 = nn.L1Loss()
+        # note that the above options rely on the backend torch.nn implementation of the L1 loss. That implementation does not allow gradients to flow through the second argument (the target) of the loss function. However this redefinition does. See also: https://discuss.pytorch.org/t/nn-criterions-dont-compute-the-gradient-w-r-t-targets/3693
+        def l1(input, target):
+            return torch.sum((input - target)) / input.data.nelement()
 
         z_D = Variable(torch.FloatTensor(self.batch_size, self.z_num))
         z_G = Variable(torch.FloatTensor(self.batch_size, self.z_num))
         z_fixed = Variable(torch.FloatTensor(self.batch_size, self.z_num).normal_(0, 1), volatile=True)
 
         if self.num_gpu > 0:
-            l1.cuda()
-
+            # l1.cuda()
             z_D = z_D.cuda()
             z_G = z_G.cuda()
             z_fixed = z_fixed.cuda()
-
+        
         if self.optimizer == 'adam':
             optimizer = torch.optim.Adam
         else:

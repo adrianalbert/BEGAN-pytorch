@@ -7,13 +7,14 @@ from torch.utils.data import TensorDataset, DataLoader
 
 class BaseModel(nn.Module):
     def forward(self, x):
-        gpu_ids = None
-        if isinstance(x.data, torch.cuda.FloatTensor) and self.num_gpu > 1:
-            gpu_ids = range(self.num_gpu)
-        if gpu_ids:
-            return nn.parallel.data_parallel(self.main, x, gpu_ids)
-        else:
-            return self.main(x)
+        return self.main(x)
+        # gpu_ids = None
+        # if isinstance(x.data, torch.cuda.FloatTensor) and self.num_gpu > 1:
+        #     gpu_ids = range(self.num_gpu)
+        # if gpu_ids:
+        #     return nn.parallel.data_parallel(self.main, x, gpu_ids)
+        # else:
+        #     return self.main(x)
 
 class GeneratorCNN(BaseModel):
     def __init__(self, input_num, initial_conv_dim, output_num, repeat_num, hidden_num, num_gpu):
