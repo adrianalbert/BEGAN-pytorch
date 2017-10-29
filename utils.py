@@ -20,7 +20,7 @@ def prepare_dirs_and_logger(config):
 
     logger.addHandler(handler)
 
-    if config.load_path:
+    if config.load_path: # loading model from saved checkpoint
         if config.load_path.startswith(config.log_dir):
             config.model_dir = config.load_path
         else:
@@ -28,7 +28,7 @@ def prepare_dirs_and_logger(config):
                 config.model_name = config.load_path
             else:
                 config.model_name = "{}_{}".format(config.dataset, config.load_path)
-    else:
+    else: # train new model
         config.model_name = "{}_{}".format(config.dataset, get_time())
 
     if not hasattr(config, 'model_dir'):
@@ -40,7 +40,7 @@ def prepare_dirs_and_logger(config):
             os.makedirs(path)
 
 def get_time():
-    return datetime.now().strftime("%m%d_%H%M%S")
+    return datetime.now().strftime("%y-%m-%d_%H:%M:%S")
 
 def save_config(config):
     param_path = os.path.join(config.model_dir, "params.json")
