@@ -15,6 +15,7 @@ import torch.nn.parallel
 import torchvision.utils as vutils
 from torch.autograd import Variable
 
+from utils import save_image_channels
 from models import *
 from data_loader import get_loader
 
@@ -27,7 +28,7 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 def next(loader):
-    return loader.next()[0]
+    return loader.next()
 
 class Trainer(object):
     def __init__(self, config, data_loader):
@@ -133,8 +134,11 @@ class Trainer(object):
         g_optim, d_optim = get_optimizer(self.lr)
 
         data_loader = iter(self.data_loader)
-        x_fixed = self._get_variable(next(data_loader))
-        vutils.save_image(x_fixed.data, '{}/x_fixed.png'.format(self.model_dir))
+        x_fixed,attr_fixed,names_fixed = next(data_loader)
+        x_fixed = self._get_variable(x_fixed)
+
+        save_image_channels(x_fixed.data, 
+            filename='{}/x_fixed.png'.format(self.model_dir), ncol=10, padding=10, take_log=[1,2], scale_each=True, channel_names=self.config.src_names, sample_names=names_fixed)
 
         k_t = 0
         prev_measure = 1
@@ -142,10 +146,10 @@ class Trainer(object):
 
         for step in trange(self.start_step, self.max_step):
             try:
-                x = next(data_loader)
+                x, x_attr, x_name = next(data_loader)
             except StopIteration:
                 data_loader = iter(self.data_loader)
-                x = next(data_loader)
+                x, x_attr, x_name = next(data_loader)
 
             # ground truth (real) data
             x = self._get_variable(x)
@@ -211,11 +215,11 @@ class Trainer(object):
                         self.inject_summary(self.summary_writer, tag, value, step)
 
                     self.inject_summary(
-                            self.summary_writer, "AE_G", AE_G_g.data.cpu().numpy(), step)
+                            self.summary_writer, "AE_G", AE_G_g.data[:,:3,...].cpu().numpy(), step)
                     self.inject_summary(
-                            self.summary_writer, "AE_x", AE_x.data.cpu().numpy(), step)
+                            self.summary_writer, "AE_x", AE_x.data[:,:3,...].cpu().numpy(), step)
                     self.inject_summary(
-                            self.summary_writer, "z_G", sample_z_G.data.cpu().numpy(), step)
+                            self.summary_writer, "z_G", sample_z_G.data[:,:3,...].cpu().numpy(), step)
 
                     self.summary_writer.flush()
 
@@ -232,26 +236,27 @@ class Trainer(object):
     def generate(self, inputs, path, idx=None):
         path = '{}/{}_G.png'.format(path, idx)
         x = self.G(inputs)
-        vutils.save_image(x.data, path)
+        save_image_channels(x.data, filename=path, ncol=10, padding=10, take_log=[1,2], scale_each=True, channel_names=self.config.src_names)
         print("[*] Samples saved: {}".format(path))
         return x
 
     def autoencode(self, inputs, path, idx=None, x_fake=None):
         x_path = '{}/{}_D.png'.format(path, idx)
-        x = self.D(inputs)
-        vutils.save_image(x.data, x_path)
+        x = self.D(inputs)  
+        save_image_channels(x.data, filename=path, ncol=10, padding=10, take_log=[1,2], scale_each=True, channel_names=self.config.src_names)
         print("[*] Samples saved: {}".format(x_path))
 
         if x_fake is not None:
             x_fake_path = '{}/{}_D_fake.png'.format(path, idx)
             x = self.D(x_fake)
-            vutils.save_image(x.data, x_fake_path)
+            save_image_channels(x.data, filename=x_fake_path, ncol=10, padding=10, take_log=[1,2], scale_each=True, channel_names=self.config.src_names)
             print("[*] Samples saved: {}".format(x_fake_path))
 
     def test(self):
         data_loader = iter(self.data_loader)
         x_fixed = self._get_variable(next(data_loader))
-        vutils.save_image(x_fixed.data, '{}/x_fixed_test.png'.format(self.model_dir))
+
+        save_image_channels(x_fixed.data, filename='{}/x_fixed_test.png'.format(self.model_dir), ncol=10, padding=10, take_log=[1,2], scale_each=True, channel_names=self.config.src_names)
         self.autoencode(x_fixed, self.model_dir, idx="test", x_fake=None)
 
     def save_model(self, step):

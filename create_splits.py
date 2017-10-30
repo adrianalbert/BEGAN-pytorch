@@ -7,9 +7,9 @@ import pandas as pd
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_path", type=str, default="./data", help="path to data folder to create splits from")
 parser.add_argument("--splits_path", type=str, default=None, help="path to data folder to create splits in")
-parser.add_argument("--train_pct", type=int, default=80, help="percentage of samples for training")
-parser.add_argument("--valid_pct", type=int, default=10, help="percentage of samples for validation")
-parser.add_argument("--test_pct", type=int, default=10, help="percentage of samples for testing")
+parser.add_argument("--train_pct", type=int, default=90, help="percentage of samples for training")
+parser.add_argument("--valid_pct", type=int, default=5, help="percentage of samples for validation")
+parser.add_argument("--test_pct", type=int, default=5, help="percentage of samples for testing")
 
 def prepare_folders(args):
     splits_path = args.splits_path

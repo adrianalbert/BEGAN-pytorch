@@ -24,8 +24,14 @@ def main(config):
         batch_size = config.sample_per_image
         do_shuffle = False
 
+    if config.src_names is not None:
+        config.src_names = config.src_names.split(",")
+
+    if config.load_attributes is not None:
+        config.load_attributes = config.load_attributes.split(",")
+
     data_loader = get_loader(
-        data_path, config.split, batch_size, config.input_scale_size, config.num_worker, do_shuffle)
+        data_path, config.split, batch_size, config.input_scale_size, num_workers=config.num_worker, shuffle=do_shuffle, load_attributes=config.load_attributes, rotate_angle=config.rotate_angle, take_log=config.take_log, normalize=config.normalize)
 
     trainer = Trainer(config, data_loader)
 

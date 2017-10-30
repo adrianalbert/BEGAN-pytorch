@@ -25,8 +25,14 @@ data_arg.add_argument('--dataset', type=str, default='CelebA')
 data_arg.add_argument('--split', type=str, default='train')
 data_arg.add_argument('--batch_size', type=int, default=16)
 data_arg.add_argument('--grayscale', type=str2bool, default=False)
-data_arg.add_argument('--n_channels', type=int, default=3)
+data_arg.add_argument('--load_attributes', type=str, default=None)
 data_arg.add_argument('--num_worker', type=int, default=12)
+
+# Data preprocessing/augmentation
+prep_arg = add_argument_group('Preprocessing')
+prep_arg.add_argument('--rotate_angle', type=int, default=0)
+prep_arg.add_argument('--take_log', type=str2bool, default=False)
+prep_arg.add_argument('--normalize', type=str2bool, default=False)
 
 # Training / test parameters
 train_arg = add_argument_group('Training')
@@ -43,6 +49,7 @@ train_arg.add_argument('--lambda_k', type=float, default=0.001)
 # Misc
 misc_arg = add_argument_group('Misc')
 misc_arg.add_argument('--comment', type=str, default=None, help="short comment to explain or identify experiment purpose/characteristics")
+data_arg.add_argument('--src_names', type=str, default=None)
 misc_arg.add_argument('--load_path', type=str, default='')
 misc_arg.add_argument('--log_step', type=int, default=50)
 misc_arg.add_argument('--save_step', type=int, default=5000)
