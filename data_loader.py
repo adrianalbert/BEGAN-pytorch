@@ -9,12 +9,12 @@ from torchvision import transforms
 import torchvision.datasets as dset
 
 from folder import ImageFolder
-from datafolder import DataFolder, rotate_ndimage, attributes_loader, ndimage_loader, basic_preprocess
+from datafolder import DataFolder, rotate_ndimage, attributes_loader, ndimage_loader, basic_preprocess, flip_ndimage
 
-def get_loader(root, split, batch_size, scale_size, num_workers=2, shuffle=True, load_attributes=None, rotate_angle=0, take_log=False, normalize=False):
+def get_loader(root, split, batch_size, scale_size, num_workers=2, shuffle=True, load_attributes=None, flips=False, rotate_angle=0, take_log=False, normalize=False, use_channels=None):
     dataset_name = os.path.basename(root)
     image_root = os.path.join(root, 'splits', split)
-    print "Loading data from", image_root
+    print "Loading data from", image_root, "log scale" if take_log else ""
 
     if dataset_name in ['CelebA']:
         dataset = ImageFolder(root=image_root, transform=transforms.Compose([
@@ -31,10 +31,20 @@ def get_loader(root, split, batch_size, scale_size, num_workers=2, shuffle=True,
         ]))
     else:
         # format input images
-        transf_list = [transforms.Lambda(lambda img: basic_preprocess(img,scale_size, log=take_log, normalize=normalize))]
+        transf_list = []
+        if use_channels is not None:
+            transf_list+=[transforms.Lambda(lambda img: img[...,use_channels])]
+        else:
+            use_channels = range(5)
+        transf_list += [transforms.Lambda(lambda img: basic_preprocess(img,scale_size, log=take_log, normalize=normalize))]
+        if flips:
+            # horizontal and vertical flips
+            transf_list += [transforms.Lambda(lambda img: flip_ndimage(img,0)),            transforms.Lambda(lambda img: flip_ndimage(img,1))]
         if rotate_angle>0:
             transf_list += [transforms.Lambda(lambda img: rotate_ndimage(img,rotate_angle))]
-        transf_list += [transforms.ToTensor()]
+        transf_list += [transforms.Lambda(lambda img: torch.from_numpy(img.copy().transpose((2,0,1))).float())]
+        # transf_list += [transforms.Normalize(np.ones(len(use_channels))*0.0, 
+        #                                      np.ones(len(use_channels))*1.0)]
         transform = transforms.Compose(transf_list)
 
         # format image attributes (labels)

@@ -71,23 +71,32 @@ def save_image_channels(tensor, filename=None, ncol=8, padding=2,
     t = tensor[:ncol,...]
     N, C, W, H = t.size()
     arr = t.numpy()
-        
+
     # if log scale is requested (better visibility)
+    if type(take_log) is bool:
+        take_log = np.arange(C) if take_log else None
     if take_log is not None:
         for i in take_log:
-            arr[:,i,...] = np.log(arr[:,i,...]+1e-4)
-        arr[np.isnan(arr)] = 0
-        arr[np.isneginf(arr)] = 0
+            print(take_log, arr[:,i,...].min(), arr[:,i,...].max())
+            arr[:,i,...] = np.log10(arr[:,i,...]+1e-4)
+        # arr[np.isnan(arr)] = 0
+        # arr[np.isneginf(arr)] = 0
         
     # scale to better visualize
-    for i in np.arange(C):
-        arr[:,i,...] = ((arr[:,i,...] - arr[:,i,...].min()) / (arr[:,i,...].max() - arr[:,i,...].min()) * 255).astype(np.uint8)
+    if normalize:
+        for i in np.arange(C):
+            arr_min = arr[:,i,...].min((1,2))
+            arr_max = arr[:,i,...].max((1,2))
+            scaling = (arr_max - arr_min)
+            scaling[scaling==0] = 1
+            diff = (arr[:,i,...].transpose((1,2,0)) - arr_min)
+            arr[:,i,...] = (diff / scaling * 255).astype(np.uint8).transpose((2,0,1))
      
-    # apply water mask
-    mask = arr[:,3,...]    
-    for i in np.arange(3):
-        for j in np.arange(N):
-            arr[j,i,...][mask[j]<128] = np.nan
+    # # apply water mask
+    # mask = arr[:,3,...]    
+    # for i in np.arange(3):
+    #     for j in np.arange(N):
+    #         arr[j,i,...][mask[j]<128] = np.nan
         
     arr_new = arr.reshape((N*C,1,W,H), order='C')
     t1 = torch.from_numpy(arr_new)
@@ -119,3 +128,4 @@ def save_image_channels(tensor, filename=None, ncol=8, padding=2,
         plt.show()
     else:
         plt.savefig(filename, bbox_inches='tight')
+    plt.close('all')

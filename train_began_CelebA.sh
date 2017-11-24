@@ -5,4 +5,5 @@ python main.py \
 --log_dir=/home/workspace/citygan/ \
 --num_gpu=4 \
 --comment="testing work environment" \
---use_tensorboard=True
+--use_tensorboard=True \
+--save_image_channels=False

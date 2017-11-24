@@ -79,7 +79,20 @@ def rotate_ndimage(img, max_angle=30):
     This uses scipy.ndimage and works on images with other than 1 or 3 channels
     '''
     angle = (-0.5 + np.random.rand())*max_angle
-    return rotate(img, angle, reshape=False)
+    img_rot = rotate(img, angle, reshape=False)
+    s = img.max((0,1)) - img.min((0,1))
+    s_rot = img_rot.max((0,1)) - img_rot.min((0,1))
+    s_rot[s_rot==0] = 1
+    img_rot = img.min((0,1)) + (img_rot - img_rot.min((0,1))) * s / s_rot
+    return img_rot
+
+def flip_ndimage(img, axis=2):
+    '''
+    This uses scipy.ndimage and works on images with other than 1 or 3 channels
+    '''
+    if np.random.rand()>0.5:
+        return np.flip(img, axis)
+    return img
 
 def attributes_loader(path, fields=None):
     with gzip.open(path, "r") as f:
@@ -90,14 +103,38 @@ def attributes_loader(path, fields=None):
         return {f:dat[f] for f in fields if f in dat}
 
 def basic_preprocess(img, res, log=False, normalize=False):
-    if img is None:
-        return None
-    img[img<0] = 0
-    img = np.ceil(resize(img.squeeze(), (res,res), preserve_range=True))#.astype(int)
-    if log:
-        img = np.log(img + 1e-3)
-    if normalize:
-        img = (img - img.min()) / (img.max() - img.min())
+    if img.shape[0] != res:
+        img = resize(img, (res,res), preserve_range=True)
+
+    # only apply transformations to those channels that have non-zero means
+    channel_means = img.mean((0,1))
+    c = channel_means!=0
+
+    # apply log scale to the requested channels
+    if type(log) is not bool:
+        c_log = [i for i in log if c[i]]
+    elif log:
+        c_log = c
+    else:
+        c_log = None
+    if c_log is not None:
+        img[...,c_log] = np.log10(img[...,c_log] + 1e-4)
+    if type(normalize) is bool:
+        img_min = img[...,c].min((0,1))
+        img_max = img[...,c].max((0,1))
+        scaling = (img_max - img_min)
+        scaling[scaling==0] = 1
+        img[...,c] = (img[...,c] - img_min) / scaling if normalize else img[...,c]
+        # img[...,c] = img[...,c] * 2 - 1
+
+    else: # if normalize is not a flag, assume it's a tuple (mu, sd)
+        mu, sd = normalize
+        mu = [m for i,m in enumerate(mu) if c[i]]
+        sd = [m for i,m in enumerate(sd) if c[i]]
+        if log:
+            mu = np.array([x if x==0 else np.log10(x) for x in mu])
+            sd = np.array([x if x==1 else np.log10(x) for x in sd])
+        img[...,c] = (img[...,c] - mu) / sd
     return img
 
 class DataFolder(data.Dataset):

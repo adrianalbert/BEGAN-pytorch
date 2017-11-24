@@ -66,5 +66,6 @@ def add_splits(args):
         check_link(f, valid_dir)
 
 if __name__ == '__main__':
+    # python create_splits.py --data_path=/home/data/world-cities/spatial-maps/samples --splits_path=/home/data/world-cities/spatial-maps/splits/
     args, unparsed = parser.parse_known_args()
     add_splits(args)

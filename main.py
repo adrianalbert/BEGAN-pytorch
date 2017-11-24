@@ -5,6 +5,12 @@ from config import get_config
 from data_loader import get_loader
 from utils import prepare_dirs_and_logger, save_config
 
+# Mean [0.03400000184774399, 164.42999267578125, 1.3049999475479126, 0.8849999904632568, 0.08799999952316284]
+# Stdv [0.16899999976158142, 1040.2120361328125, 16.354999542236328, 0.3100000023841858, 0.2150000035762787]
+
+normalize_channels = ([0, 164.42, 1.304, 0, 0],
+                      [1, 1040.413, 16.354, 1, 1])
+
 def main(config):
     prepare_dirs_and_logger(config)
 
@@ -30,8 +36,10 @@ def main(config):
     if config.load_attributes is not None:
         config.load_attributes = config.load_attributes.split(",")
 
+    normalize = config.normalize if not config.normalize_channels else normalize_channels
+
     data_loader = get_loader(
-        data_path, config.split, batch_size, config.input_scale_size, num_workers=config.num_worker, shuffle=do_shuffle, load_attributes=config.load_attributes, rotate_angle=config.rotate_angle, take_log=config.take_log, normalize=config.normalize)
+        data_path, config.split, batch_size, config.input_scale_size, num_workers=config.num_worker, shuffle=do_shuffle, load_attributes=config.load_attributes, flips=config.flips, rotate_angle=config.rotate_angle, take_log=config.take_log, normalize=normalize, use_channels=config.use_channels)
 
     trainer = Trainer(config, data_loader)
 
