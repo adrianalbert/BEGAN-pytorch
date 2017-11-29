@@ -198,7 +198,7 @@ class Trainer(object):
 
             # Update Discriminator D
 
-            z_D.data.normal_(0, 1)
+            z_D.data.uniform_(-1, 1)
             sample_z_D = self.G(z_D)
             AE_x = self.D(x)
             # AE_G_d = self.D(sample_z_D.detach())
@@ -217,7 +217,8 @@ class Trainer(object):
 
             # Update Generator G
 
-            z_G.data.normal_(0, 1)
+            # z_G.data.normal_(0, 1)
+            z_G.data.uniform_(-1, 1)
             sample_z_G = self.G(z_G)
             AE_G_g = self.D(sample_z_G)
             g_l1_penalty = self.L1 * l1_reg(self.G)
