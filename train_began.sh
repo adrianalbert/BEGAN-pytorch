@@ -8,7 +8,8 @@ python main.py \
 --use_tensorboard=True \
 --load_attributes="region,profiles" \
 --src_names="bldg,pop,lum,water,bounds" \
---lr=0.0001 \
+--lr_G=0.00001 \
+--lr_D=0.00001 \
 --batch_size=32 \
 --input_scale_size=64 \
 --use_channels="1" \
@@ -18,7 +19,9 @@ python main.py \
 --flips=True \
 --take_log=True \
 --save_step=2000 \
---lambda_k=0.001 \
+--lambda_k=0.0005 \
 --gamma=0.5 \
 --conv_hidden_num=128 \
---z_num=128 
+--z_num=128 \
+--L2=0.00001 \
+--L1=0.00001

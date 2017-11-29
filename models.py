@@ -37,7 +37,7 @@ class GeneratorCNN(BaseModel):
 
         layers.append(nn.Conv2d(hidden_num, output_num, 3, 1, 1))
         # layers.append(nn.Sigmoid())
-        # layers.append(nn.ELU(True))
+        layers.append(nn.ELU(True))
 
         self.conv = torch.nn.Sequential(*layers)
         
@@ -92,7 +92,7 @@ class DiscriminatorCNN(BaseModel):
 
         layers.append(nn.Conv2d(hidden_num, input_channel, 3, 1, 1))
         # layers.append(nn.Sigmoid())
-        # layers.append(nn.ELU(True))
+        layers.append(nn.ELU(True))
 
         self.conv2 = torch.nn.Sequential(*layers)
 

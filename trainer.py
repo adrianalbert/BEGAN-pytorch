@@ -38,11 +38,14 @@ class Trainer(object):
         self.num_gpu = config.num_gpu
         self.dataset = config.dataset
 
-        self.lr = config.lr
+        self.lr_G = config.lr_G
+        self.lr_D = config.lr_D
         self.beta1 = config.beta1
         self.beta2 = config.beta2
         self.optimizer = config.optimizer
         self.batch_size = config.batch_size
+        self.L2 = config.L2
+        self.L1 = config.L1
 
         self.gamma = config.gamma
         self.lambda_k = config.lambda_k
@@ -110,7 +113,15 @@ class Trainer(object):
         # l1 = nn.L1Loss()
         # note that the above options rely on the backend torch.nn implementation of the L1 loss. That implementation does not allow gradients to flow through the second argument (the target) of the loss function. However this redefinition does. See also: https://discuss.pytorch.org/t/nn-criterions-dont-compute-the-gradient-w-r-t-targets/3693
         def l1(input, target):
-            return torch.mean(torch.sum(torch.abs(input - target), 1))
+            # return torch.mean(torch.sum(torch.abs(input - target), 1))
+            return torch.mean(torch.abs(input - target))
+
+        def l1_reg(mdl):
+            reg = None
+            for W in mdl.parameters():
+                scale=float(reduce(lambda x,y: x*y, [l for l in W.size()], 1))
+                reg = W.norm(1)/scale if reg is None else reg + W.norm(1)/scale
+            return reg
 
         rand_seed = 4321
         if self.num_gpu > 0:
@@ -137,11 +148,11 @@ class Trainer(object):
         else:
             raise Exception("[!] Caution! Paper didn't use {} opimizer other than Adam".format(config.optimizer))
 
-        def get_optimizer(lr):
-            return optimizer(self.G.parameters(), lr=lr, betas=(self.beta1, self.beta2)), \
-                   optimizer(self.D.parameters(), lr=lr, betas=(self.beta1, self.beta2))
+        def get_optimizer(lr_G, lr_D):
+            return optimizer(self.G.parameters(), lr=lr_G, betas=(self.beta1, self.beta2), weight_decay=self.L2), \
+                   optimizer(self.D.parameters(), lr=lr_D, betas=(self.beta1, self.beta2), weight_decay=self.L2)
 
-        g_optim, d_optim = get_optimizer(self.lr)
+        g_optim, d_optim = get_optimizer(self.lr_G, self.lr_D)
 
         data_loader = iter(self.data_loader)
         sample = next(data_loader)
@@ -161,8 +172,8 @@ class Trainer(object):
 
         k_t = 0.0
         k_t_hist = []
-        k_t_thresh = 50
-        alpha = 0.5
+        k_t_thresh = 5
+        alpha = 1
         prev_measure = 1
         measure_history = deque([0]*self.lr_update_step, self.lr_update_step)
 
@@ -190,12 +201,15 @@ class Trainer(object):
             z_D.data.normal_(0, 1)
             sample_z_D = self.G(z_D)
             AE_x = self.D(x)
-            AE_G_d = self.D(sample_z_D.detach())
+            # AE_G_d = self.D(sample_z_D.detach())
+            AE_G_d = self.D(sample_z_D)
 
             d_loss_real = l1(AE_x, x)
-            d_loss_fake = l1(AE_G_d, sample_z_D.detach())
+            # d_loss_fake = l1(AE_G_d, sample_z_D.detach())
+            d_loss_fake = l1(AE_G_d, sample_z_D)
+            d_l1_penalty= self.L1 * l1_reg(self.D)
+            d_loss = d_loss_real - k_t * d_loss_fake + d_l1_penalty
 
-            d_loss = d_loss_real - k_t * d_loss_fake
             self.D.zero_grad()
             self.G.zero_grad()
             d_loss.backward()
@@ -206,7 +220,8 @@ class Trainer(object):
             z_G.data.normal_(0, 1)
             sample_z_G = self.G(z_G)
             AE_G_g = self.D(sample_z_G)
-            g_loss = l1(AE_G_g, sample_z_G) 
+            g_l1_penalty = self.L1 * l1_reg(self.G)
+            g_loss = l1(AE_G_g, sample_z_G) + g_l1_penalty
 
             # loss = d_loss + g_loss
             self.D.zero_grad()
@@ -228,9 +243,9 @@ class Trainer(object):
     
             if step % self.log_step == 0:
                 print("[{}/{}] Loss_D: {:.4f} L_x: {:.4f} Loss_G: {:.4f} "
-                      "measure: {:.4f}, k_t: {:.4f}, lr: {:.7f}". \
+                      "measure: {:.4f}, k_t: {:.4f}, lr(G): {:.7f}, lr(D): {:.7f}". \
                       format(step, self.max_step, d_loss.data[0], d_loss_real.data[0],
-                             g_loss.data[0], measure, k_t, self.lr))
+                             g_loss.data[0], measure, k_t, self.lr_G, self.lr_D))
                 x_fake = self.generate(z_fixed, self.model_dir, idx=step)
                 self.autoencode(x_fixed, self.model_dir, idx=step, x_fake=x_fake)
 
@@ -240,10 +255,13 @@ class Trainer(object):
                         'loss/loss_D_fake': d_loss_fake.data[0],
                         'loss/L_x': d_loss_real.data[0],
                         'loss/Loss_G': g_loss.data[0],
+                        'penalty/G_l1_penalty':g_l1_penalty.data[0],
+                        'penalty/D_l1_penalty':d_l1_penalty.data[0],
                         'grad/z_G_norm': z_G_grad_norm,
                         'misc/measure': measure,
                         'misc/k_t': k_t,
-                        'misc/lr': self.lr,
+                        'misc/lr_G': self.lr_G,
+                        'misc/lr_D': self.lr_D,
                         'misc/balance': g_d_balance
                     }
                     for tag, value in info.items():
@@ -264,8 +282,9 @@ class Trainer(object):
             if step % self.lr_update_step == self.lr_update_step - 1:
                 cur_measure = np.mean(measure_history)
                 if cur_measure > prev_measure * 0.9999:
-                    self.lr *= 0.5
-                    g_optim, d_optim = get_optimizer(self.lr)
+                    self.lr_G *= 0.5
+                    self.lr_D *= 0.5
+                    g_optim, d_optim = get_optimizer(self.lr_G, self.lr_D)
                 prev_measure = cur_measure
 
     def generate(self, inputs, path, idx=None):
