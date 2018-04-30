@@ -29,6 +29,7 @@ class GeneratorCNN(BaseModel):
         for idx in range(repeat_num):
             layers.append(nn.Conv2d(hidden_num, hidden_num, 3, 1, 1))
             layers.append(nn.ELU(True))
+            # layers.append(nn.Dropout(0.05))
             layers.append(nn.Conv2d(hidden_num, hidden_num, 3, 1, 1))
             layers.append(nn.ELU(True))
 
@@ -36,9 +37,9 @@ class GeneratorCNN(BaseModel):
                 layers.append(nn.Upsample(scale_factor=2))
 
         layers.append(nn.Conv2d(hidden_num, output_num, 3, 1, 1))
-        # layers.append(nn.Sigmoid())
-        layers.append(nn.ELU(True))
-
+        # layers.append(nn.ELU(True))
+        layers.append(nn.Tanh())
+        
         self.conv = torch.nn.Sequential(*layers)
         
     def main(self, x):
@@ -60,7 +61,8 @@ class DiscriminatorCNN(BaseModel):
             channel_num = hidden_num * (idx + 1)
             layers.append(nn.Conv2d(prev_channel_num, channel_num, 3, 1, 1))
             layers.append(nn.ELU(True))
-
+            # layers.append(nn.Dropout(0.1))
+ 
             if idx < repeat_num - 1:
                 layers.append(nn.Conv2d(channel_num, channel_num, 3, 2, 1))
                 #layers.append(nn.MaxPool2d(2))
@@ -91,8 +93,8 @@ class DiscriminatorCNN(BaseModel):
                 layers.append(nn.Upsample(scale_factor=2))
 
         layers.append(nn.Conv2d(hidden_num, input_channel, 3, 1, 1))
-        # layers.append(nn.Sigmoid())
-        layers.append(nn.ELU(True))
+        # layers.append(nn.Tanh())
+        # layers.append(nn.ELU(True))
 
         self.conv2 = torch.nn.Sequential(*layers)
 

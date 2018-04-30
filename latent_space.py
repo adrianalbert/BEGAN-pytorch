@@ -11,7 +11,7 @@ import torch.utils.data
 import torchvision.utils as vutils
 from torch.autograd import Variable
 
-def reverse_z(netG, x, nz=128, z_distribution="normal", cuda=False, clip='disabled', lr=0.001, niter=1000):
+def reverse_z(netG, x, nz=128, z_distribution="normal", cuda=False, clip='disabled', lr=0.001, niter=1000, loss_type='L2', apply_transform=None):
     """
     Estimate z_approx given G and G(z).
     Args:
@@ -27,26 +27,28 @@ def reverse_z(netG, x, nz=128, z_distribution="normal", cuda=False, clip='disabl
     # sanity check
     assert clip in ['disabled', 'standard', 'stochastic']
 
-    xt = torch.from_numpy(x.transpose((1,2,0))).float()
+    xt = torch.from_numpy(x).float()
+    if apply_transform is not None:
+            xt = apply_transform(xt)
     xv = Variable(xt)
     xv = xv.detach()
 
     # loss metrics
     mse_loss = nn.MSELoss()
-    mse_loss_ = nn.MSELoss()
+    l1_loss = nn.L1Loss()
 
     # init tensor
     if z_distribution == 'uniform':
-        z_approx = torch.FloatTensor(1, nz).uniform_(-1, 1)
+        z_approx = torch.FloatTensor(1, nz, 1, 1).uniform_(-1, 1)
     elif z_distribution == 'normal':
-        z_approx = torch.FloatTensor(1, nz).normal_(0, 1)
+        z_approx = torch.FloatTensor(1, nz, 1, 1).normal_(0, 1)
     else:
         raise ValueError()
 
     # transfer to gpu
     if cuda:
         mse_loss.cuda()
-        mse_loss_.cuda()
+        l1_loss.cuda()
         z_approx = z_approx.cuda()
         xv = xv.cuda()
 
@@ -58,23 +60,32 @@ def reverse_z(netG, x, nz=128, z_distribution="normal", cuda=False, clip='disabl
     optimizer_approx = optim.Adam([z_approx], lr=lr, betas=(0.5, 0.999))
 
     # train
-    loss_g_z = []
+    loss_g_z_hist = []
     loss_min = 1000
     z_approx_min = z_approx
+    iter_disp = niter / 10
     for i in range(niter):
         g_z_approx = netG(z_approx)
         mse_g_z = mse_loss(g_z_approx, xv)
-        if i % 100 == 0:
-            print("[Iter {}] mse_g_z: {}"
-                  .format(i, mse_g_z.data[0]))
-        loss_g_z += [mse_g_z.data[0]]
+        l1_g_z = l1_loss(g_z_approx, xv)
+        if loss_type == 'L2':
+            loss_g_z = mse_g_z
+        elif loss_type == 'L1':
+            loss_g_z = l1_g_z
+        else:
+            loss_g_z = mse_g_z + l1_g_z
+
+        if i % iter_disp == 0:
+            print("[Iter {}/{}] loss_g_z: {}"
+                  .format(i, niter, mse_g_z.data[0]))
+        loss_g_z_hist += [loss_g_z.data[0]]
         if mse_g_z.data[0] < loss_min:
-            loss_min = mse_g_z.data[0]
+            loss_min = loss_g_z.data[0]
             z_approx_min = z_approx
 
         # bprop
         optimizer_approx.zero_grad()
-        mse_g_z.backward()
+        loss_g_z.backward()
         optimizer_approx.step()
 
         # clipping
@@ -85,4 +96,4 @@ def reverse_z(netG, x, nz=128, z_distribution="normal", cuda=False, clip='disabl
             z_approx.data[z_approx.data > 1] = random.uniform(-1, 1)
             z_approx.data[z_approx.data < -1] = random.uniform(-1, 1)
 
-    return z_approx_min, loss_g_z
+    return z_approx_min, loss_g_z_hist

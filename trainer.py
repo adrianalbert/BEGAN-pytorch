@@ -16,8 +16,6 @@ import torchvision.utils as vutils
 from torch.autograd import Variable
 
 from utils import save_image_channels
-from models import *
-from data_loader import get_loader
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -34,8 +32,10 @@ class Trainer(object):
     def __init__(self, config, data_loader):
         self.config = config
         self.data_loader = data_loader
+        self.model_type = config.model_type
 
-        self.num_gpu = config.num_gpu
+        self.num_gpu = len(config.gpu_ids)
+        self.gpu_ids = config.gpu_ids
         self.dataset = config.dataset
 
         self.lr_G = config.lr_G
@@ -69,8 +69,8 @@ class Trainer(object):
             self.G.cuda()
             self.D.cuda()
         elif self.num_gpu > 1:
-            self.D = nn.DataParallel(self.D.cuda(),device_ids=range(self.num_gpu))
-            self.G = nn.DataParallel(self.G.cuda(),device_ids=range(self.num_gpu))
+            self.D = nn.DataParallel(self.D.cuda(),device_ids=self.gpu_ids)
+            self.G = nn.DataParallel(self.G.cuda(),device_ids=self.gpu_ids)
 
         if self.load_path:
             self.load_model()
@@ -99,11 +99,17 @@ class Trainer(object):
         channel, height, width = self.data_loader.shape
         assert height == width, "height and width should be same"
 
-        repeat_num = int(np.log2(height)) - 2
-        self.D = DiscriminatorCNN(
-                channel, self.z_num, repeat_num, self.conv_hidden_num, self.num_gpu)
-        self.G = GeneratorCNN(
-                self.z_num, self.D.conv2_input_dim, channel, repeat_num, self.conv_hidden_num, self.num_gpu)
+        if self.model_type == 'began':
+            from models import *
+            repeat_num = int(np.log2(height)) - 2
+            self.D = DiscriminatorCNN(
+                    channel, self.z_num, repeat_num, self.conv_hidden_num, self.num_gpu)
+            self.G = GeneratorCNN(
+                    self.z_num, self.D.conv2_input_dim, channel, repeat_num, self.conv_hidden_num, self.num_gpu)
+        elif self.model_type == 'dcgan':
+            from models_dcgan import *
+            self.G = _netG(self.z_num, self.conv_hidden_num, channel, self.gpu_ids) 
+            self.D = _netD(self.conv_hidden_num, channel, self.gpu_ids)
 
         self.G.apply(weights_init)
         self.D.apply(weights_init)
@@ -134,14 +140,19 @@ class Trainer(object):
         z_D = torch.FloatTensor(self.batch_size, self.z_num)
         z_G = torch.FloatTensor(self.batch_size, self.z_num)
         z_fixed = Variable(torch.FloatTensor(self.batch_size, self.z_num).normal_(0, 1), volatile=True)
+        label = torch.FloatTensor(self.batch_size)
+        z = torch.FloatTensor(self.batch_size, self.z_num, 1, 1)
 
         if self.num_gpu > 0:
             z_fixed = z_fixed.cuda()
             z_G = Variable(z_G.cuda(), requires_grad=True)
             z_D = Variable(z_D.cuda(), requires_grad=True)
+            z = Variable(z.cuda(), requires_grad=True)
         else:
             z_G = Variable(z_G, requires_grad=True)
             z_D = Variable(z_D, requires_grad=True)
+            z = Variable(z, requires_grad=True)
+        label = self._get_variable(label)
 
         if self.optimizer == 'adam':
             optimizer = torch.optim.Adam
@@ -162,7 +173,7 @@ class Trainer(object):
             x_fixed, _ = sample
         x_fixed = self._get_variable(x_fixed)
 
-        self.take_log_display = not self.config.take_log #self.config.use_channels if self.config.take_log is None or not self.config.take_log else False
+        self.take_log_display = False # not self.config.take_log #self.config.use_channels if self.config.take_log is None or not self.config.take_log else False
         if self.config.save_image_channels:
             save_image_channels(x_fixed.data, 
                 filename='{}/x_fixed.png'.format(self.model_dir), ncol=10, padding=10, take_log=self.take_log_display, scale_each=True, normalize=self.config.normalize, channel_names=self.config.src_names)
@@ -175,6 +186,10 @@ class Trainer(object):
         k_t_thresh = 5
         alpha = 1
         prev_measure = 1
+        real_label = 1
+        fake_label = 0
+        gan_criterion = nn.BCELoss()
+
         measure_history = deque([0]*self.lr_update_step, self.lr_update_step)
 
         for step in trange(self.start_step, self.max_step):
@@ -196,51 +211,80 @@ class Trainer(object):
             x = self._get_variable(x)
             batch_size = x.size(0)
 
-            # Update Discriminator D
+            if self.model_type == 'began':
+                # Update Discriminator D
+                z_D.data.normal_(0,1)
+                sample_z_D = self.G(z_D)
+                AE_x = self.D(x)
+                # AE_G_d = self.D(sample_z_D.detach())
+                AE_G_d = self.D(sample_z_D)
 
-            z_D.data.uniform_(-1, 1)
-            sample_z_D = self.G(z_D)
-            AE_x = self.D(x)
-            # AE_G_d = self.D(sample_z_D.detach())
-            AE_G_d = self.D(sample_z_D)
+                d_loss_real = l1(AE_x, x)
+                # d_loss_fake = l1(AE_G_d, sample_z_D.detach())
+                d_loss_fake = l1(AE_G_d, sample_z_D)
+                d_l1_penalty= self.L1 * l1_reg(self.D)
+                d_loss = d_loss_real - k_t * d_loss_fake + d_l1_penalty
 
-            d_loss_real = l1(AE_x, x)
-            # d_loss_fake = l1(AE_G_d, sample_z_D.detach())
-            d_loss_fake = l1(AE_G_d, sample_z_D)
-            d_l1_penalty= self.L1 * l1_reg(self.D)
-            d_loss = d_loss_real - k_t * d_loss_fake + d_l1_penalty
+                self.D.zero_grad()
+                self.G.zero_grad()
+                d_loss.backward()
+                d_optim.step()
 
-            self.D.zero_grad()
-            self.G.zero_grad()
-            d_loss.backward()
-            d_optim.step()
+                # Update Generator G
+                z_G.data.normal_(0,1)
+                sample_z_G = self.G(z_G)
+                AE_G_g = self.D(sample_z_G)
+                g_l1_penalty = self.L1 * l1_reg(self.G)
+                g_loss = l1(AE_G_g, sample_z_G) + g_l1_penalty
 
-            # Update Generator G
+                # loss = d_loss + g_loss
+                self.D.zero_grad()
+                self.G.zero_grad()
+                g_loss.backward()
+                g_optim.step()
 
-            # z_G.data.normal_(0, 1)
-            z_G.data.uniform_(-1, 1)
-            sample_z_G = self.G(z_G)
-            AE_G_g = self.D(sample_z_G)
-            g_l1_penalty = self.L1 * l1_reg(self.G)
-            g_loss = l1(AE_G_g, sample_z_G) + g_l1_penalty
+                g_d_balance = (self.gamma*d_loss_real-d_loss_fake).data[0]
+                k_t += self.lambda_k * g_d_balance
+                k_t = alpha * k_t + (1-alpha) * np.mean(k_t_hist) if len(k_t_hist)>k_t_thresh else k_t
+                k_t = max(min(1, k_t), 0)
+                k_t_hist.append(k_t)
+                k_t_hist = k_t_hist[-k_t_thresh:]
 
-            # loss = d_loss + g_loss
-            self.D.zero_grad()
-            self.G.zero_grad()
-            g_loss.backward()
-            g_optim.step()
+                measure = d_loss_real.data[0] + abs(g_d_balance)
+                measure_history.append(measure)
+                z_grad_norm = np.mean(np.abs((z_G.grad.data.cpu().numpy())))
+            else:
+                # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+                # train with real
+                self.D.zero_grad()
+                label.data.fill_(real_label)
 
-            g_d_balance = (self.gamma*d_loss_real-d_loss_fake).data[0]
-            k_t += self.lambda_k * g_d_balance
-            k_t = alpha * k_t + (1-alpha) * np.mean(k_t_hist) if len(k_t_hist)>k_t_thresh else k_t
-            k_t = max(min(1, k_t), 0)
-            k_t_hist.append(k_t)
-            k_t_hist = k_t_hist[-k_t_thresh:]
+                output = self.D(x)
+                errD_real = gan_criterion(output, label)
+                errD_real.backward()
+                D_x = output.data.mean()
 
-            measure = d_loss_real.data[0] + abs(g_d_balance)
-            measure_history.append(measure)
+                # train with fake
+                z.data.normal_(0,1)
+                fake = netG(z)
+                label.data.fill_(fake_label)
+                output = self.D(fake.detach())
+                errD_fake = gan_criterion(output, label)
+                errD_fake.backward()
+                D_G_z1 = output.data.mean()
+                errD = errD_real + errD_fake
+                d_optim.step()
 
-            z_G_grad_norm = np.mean(np.abs((z_G.grad.data.cpu().numpy())))
+                # (2) Update G network: maximize log(D(G(z)))
+                self.G.zero_grad()
+                label.data.fill_(real_label)  # fake labels are real for generator cost
+                output = self.D(fake)
+                errG = gan_criterion(output, label)
+                errG.backward()
+                D_G_z2 = output.data.mean()
+                g_optim.step()
+                z_grad_norm = np.mean(np.abs((z.grad.data.cpu().numpy())))
+
     
             if step % self.log_step == 0:
                 print("[{}/{}] Loss_D: {:.4f} L_x: {:.4f} Loss_G: {:.4f} "
@@ -258,7 +302,7 @@ class Trainer(object):
                         'loss/Loss_G': g_loss.data[0],
                         'penalty/G_l1_penalty':g_l1_penalty.data[0],
                         'penalty/D_l1_penalty':d_l1_penalty.data[0],
-                        'grad/z_G_norm': z_G_grad_norm,
+                        'grad/z_G_norm': z_grad_norm,
                         'misc/measure': measure,
                         'misc/k_t': k_t,
                         'misc/lr_G': self.lr_G,

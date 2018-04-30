@@ -1,21 +1,27 @@
-#-*- coding: utf-8 -*-
+
 import argparse
 
 def str2bool(v):
     return v.lower() in ('true', '1')
 
-def str2bool2list(v):
-	if 'true' in v.lower() or 'false' in v.lower():
-		return str2bool(v)
+def str2intlist(v):
 	lst = v.split(",")
 	lst_parsed = []
-	
 	for l in lst:
 		try:
 			lst_parsed += [int(l)]
 		except ValueError:
 			lst_parsed += [float(l)]
 	return lst_parsed
+
+def str2list(v):
+	return v.split(",")
+
+def str2bool2list(v):
+	if 'true' in v.lower() or 'false' in v.lower():
+		return str2bool(v)
+	return str2intlist(v)
+	
 
 arg_lists = []
 parser = argparse.ArgumentParser()
@@ -49,9 +55,11 @@ prep_arg.add_argument('--rotate_angle', type=int, default=0)
 prep_arg.add_argument('--take_log', type=str2bool2list, default=False)
 prep_arg.add_argument('--normalize', type=str2bool, default=False)
 prep_arg.add_argument('--normalize_channels', type=str2bool, default=False)
+prep_arg.add_argument('--filter_by_pop', type=str2list, default=None)
 
 # Training / test parameters
 train_arg = add_argument_group('Training')
+train_arg.add_argument('--model_type', type=str, default='began')
 train_arg.add_argument('--is_train', type=str2bool, default=True)
 train_arg.add_argument('--optimizer', type=str, default='adam')
 train_arg.add_argument('--max_step', type=int, default=500000)
@@ -77,7 +85,7 @@ misc_arg.add_argument('--num_log_samples', type=int, default=3)
 misc_arg.add_argument('--log_level', type=str, default='INFO', choices=['INFO', 'DEBUG', 'WARN'])
 misc_arg.add_argument('--log_dir', type=str, default='logs')
 misc_arg.add_argument('--data_dir', type=str, default='data')
-misc_arg.add_argument('--num_gpu', type=int, default=1)
+misc_arg.add_argument('--gpu_ids', type=str2intlist, default=[])
 misc_arg.add_argument('--test_data_path', type=str, default=None,
                       help='directory with images which will be used in test sample generation')
 misc_arg.add_argument('--sample_per_image', type=int, default=64,
